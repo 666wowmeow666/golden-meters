@@ -1,14 +1,13 @@
 -- GOLDEN METERS Object Data Model
 -- PostgreSQL 16+
--- Version: 0.2 · 2026-11-19
--- Canonical schema for the new digital infrastructure
+-- Version: 0.3 · 2026-11-19
+-- Target: Yandex Managed PostgreSQL or Selectel Managed PostgreSQL
+-- Media storage: Yandex Object Storage / Selectel S3
 
--- Extensions
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- =====================================================
--- 1. Reference tables / enums (as tables for flexibility)
+-- 1. Reference tables
 -- =====================================================
 
 CREATE TABLE property_types (
@@ -20,15 +19,16 @@ CREATE TABLE property_types (
 );
 
 INSERT INTO property_types (code, name_ru, sort_order) VALUES
-('villa',       'Вилла',              10),
-('apartment',   'Апартаменты',        20),
-('house',       'Дом',                30),
-('townhouse',   'Таунхаус',           40),
-('penthouse',   'Пентхаус',           50),
-('land',        'Участок',            60),
-('commercial',  'Коммерция',          70),
-('complex_unit','Квартира в ЖК',      80),
-('other',       'Другое',             90);
+('villa',        'Вилла',              10),
+('apartment',    'Апартаменты',        20),
+('house',        'Дом',                30),
+('townhouse',    'Таунхаус',           40),
+('penthouse',    'Пентхаус',           50),
+('land',         'Участок',            60),
+('commercial',   'Коммерция',          70),
+('complex_unit', 'Квартира в ЖК',      80),
+('duplex',       'Дуплекс',            85),
+('other',        'Другое',             90);
 
 CREATE TABLE deal_types (
     code        text PRIMARY KEY,
@@ -109,7 +109,7 @@ CREATE TABLE objects (
     is_premium          boolean NOT NULL DEFAULT false,
     is_exclusive        boolean NOT NULL DEFAULT false,
 
-    manager_id          uuid,                     -- FK to users later
+    manager_id          uuid,
 
     source_system       text NOT NULL,
     source_record_id    text,
@@ -128,7 +128,6 @@ CREATE TABLE objects (
     )
 );
 
--- Indexes
 CREATE INDEX idx_objects_status ON objects (status) WHERE deleted_at IS NULL;
 CREATE INDEX idx_objects_property_deal ON objects (property_type, deal_type) WHERE deleted_at IS NULL;
 CREATE INDEX idx_objects_manager ON objects (manager_id) WHERE deleted_at IS NULL;
@@ -148,7 +147,7 @@ CREATE TABLE media (
 
     file_name           text NOT NULL,
     storage_url         text NOT NULL,
-    storage_provider    text,                     -- s3, cloudinary, local, yandex...
+    storage_provider    text,                     -- yandex, selectel, s3...
     mime_type           text,
     file_size           integer,
     width               integer,
@@ -180,7 +179,7 @@ CREATE TABLE object_history (
     object_id           uuid NOT NULL,
     changed_at          timestamptz NOT NULL DEFAULT now(),
     changed_by          uuid,
-    change_type         text NOT NULL,             -- create, update, status_change, soft_delete, restore
+    change_type         text NOT NULL,
     old_values          jsonb,
     new_values          jsonb,
     comment             text
@@ -193,7 +192,6 @@ CREATE INDEX idx_object_history_changed_at ON object_history (changed_at DESC);
 -- 5. Triggers
 -- =====================================================
 
--- Auto-update updated_at
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -207,7 +205,6 @@ CREATE TRIGGER trg_objects_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION set_updated_at();
 
--- Simple search_vector update (can be improved later)
 CREATE OR REPLACE FUNCTION objects_search_vector_update()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -225,7 +222,7 @@ CREATE TRIGGER trg_objects_search_vector
     EXECUTE FUNCTION objects_search_vector_update();
 
 -- =====================================================
--- 6. Comments (documentation in DB)
+-- Comments
 -- =====================================================
 
 COMMENT ON TABLE objects IS 'Канонические объекты недвижимости GOLDEN METERS';
@@ -236,5 +233,3 @@ COMMENT ON COLUMN objects.deleted_at IS 'Soft delete. NULL = активная з
 
 COMMENT ON TABLE media IS 'Медиафайлы, привязанные к объектам';
 COMMENT ON TABLE object_history IS 'Полный аудит изменений объектов';
-
--- End of schema
